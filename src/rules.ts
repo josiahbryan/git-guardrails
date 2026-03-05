@@ -36,8 +36,8 @@ export const DANGEROUS_RULES: DangerousRule[] = [
   },
   {
     subcommand: 'clean',
-    match: hasFlag('-f', '-fd', '-fx', '-fxd', '-xfd', '-df', '-xf'),
-    reason: 'git clean -f permanently deletes untracked files',
+    match: (args) => args.some((a) => a.startsWith('-') && a.includes('f')),
+    reason: 'git clean with -f permanently deletes untracked files',
   },
   {
     subcommand: 'push',

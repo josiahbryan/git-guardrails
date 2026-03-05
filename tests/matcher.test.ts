@@ -58,3 +58,50 @@ describe('checkCommand', () => {
     });
   }
 });
+
+describe('edge cases', () => {
+  test('BLOCKS: git clean with combined flags -fdx', () => {
+    const result = checkCommand(['clean', '-fdx']);
+    expect(result.blocked).toBe(true);
+  });
+
+  test('BLOCKS: git clean -xf (f not first)', () => {
+    const result = checkCommand(['clean', '-xf']);
+    expect(result.blocked).toBe(true);
+  });
+
+  test('ALLOWS: git clean -n (dry run, no -f)', () => {
+    const result = checkCommand(['clean', '-n']);
+    expect(result.blocked).toBe(false);
+  });
+
+  test('ALLOWS: git checkout with no args', () => {
+    const result = checkCommand(['checkout']);
+    expect(result.blocked).toBe(false);
+  });
+
+  test('ALLOWS: empty args (bare git)', () => {
+    const result = checkCommand([]);
+    expect(result.blocked).toBe(false);
+  });
+
+  test('BLOCKS: flags after positional args (git push origin -f)', () => {
+    const result = checkCommand(['push', 'origin', '-f']);
+    expect(result.blocked).toBe(true);
+  });
+
+  test('ALLOWS: git restore specific file (not .)', () => {
+    const result = checkCommand(['restore', 'src/index.ts']);
+    expect(result.blocked).toBe(false);
+  });
+
+  test('ALLOWS: git restore --staged specific file', () => {
+    const result = checkCommand(['restore', '--staged', 'src/index.ts']);
+    expect(result.blocked).toBe(false);
+  });
+
+  test('BLOCKS: git restore . even with --staged', () => {
+    const result = checkCommand(['restore', '--staged', '.']);
+    expect(result.blocked).toBe(true);
+  });
+});
