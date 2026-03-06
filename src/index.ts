@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { checkCommand } from './matcher.ts';
 
-/** Path to the real git binary after install */
-const REAL_GIT = '/usr/bin/git-core-bin';
+/** Path to the real git binary (untouched at its original location) */
+const REAL_GIT = '/usr/bin/git';
 
 function main(): void {
   const gitArgs = process.argv.slice(2);
