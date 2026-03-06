@@ -5,7 +5,8 @@
   "scripts": {
     "build": "bun build --compile --outfile dist/git src/index.ts",
     "test": "bun test",
-    "install-guardrails": "sudo bash scripts/install.sh"
+    "install-guardrails": "bash scripts/install.sh",
+    "release": "bash scripts/release.sh"
   },
   "devDependencies": {
     "bun-types": "^1.3.10"

@@ -2,6 +2,35 @@
 
 A compiled git wrapper that blocks dangerous git commands from being executed — particularly by AI coding agents (Claude Code, Cursor, Copilot, etc.) that tend to run destructive operations like `git stash`, `git reset --hard`, and `git checkout .` without asking.
 
+
+## Quickstart
+
+### Option A: One-liner install (pre-built binary, no dependencies)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/josiahbryan/git-guardrails/main/scripts/install-remote.sh | bash
+```
+
+This auto-detects your OS and architecture, downloads the correct binary from GitHub Releases, and installs it. No Bun, Node, or build tools needed.
+
+### Option B: Build from source
+
+```bash
+# Requires Bun (https://bun.sh)
+git clone https://github.com/josiahbryan/git-guardrails.git
+cd git-guardrails
+bun install && bun run build && bash scripts/install.sh
+```
+
+### Verify
+
+```bash
+git status          # works normally
+git stash           # BLOCKED
+```
+
+That's it. Every `git` call on your system now goes through the guardrails.
+
 ## Why This Exists
 
 AI coding agents run as subprocesses with full shell access. They frequently:
@@ -27,13 +56,13 @@ A Bun-compiled TypeScript binary is placed at `/opt/homebrew/bin/git`, which com
 The real git binary at `/usr/bin/git` is never moved or modified. The wrapper simply shadows it via PATH ordering.
 
 ```
-┌──────────────────┐     ┌────────────────────────┐     ┌──────────────┐
-│  Any git caller  │────>│  /opt/homebrew/bin/git │────>│ /usr/bin/git │
-│  (agent, shell,  │     │  (guardrails wrapper)  │     │ (real git)   │
-│   IDE, CI, etc.) │     │                        │     │              │
-└──────────────────┘     │  blocked? -> exit 128  │     └──────────────┘
-                         │  allowed? -> exec real │
-                         └────────────────────────┘
+┌───────────────────┐     ┌─────────────────────────┐     ┌──────────────┐
+│  Any git caller   │────>│  /opt/homebrew/bin/git  │────>│ /usr/bin/git │
+│  (agent, shell,   │     │  (guardrails wrapper)   │     │ (real git)   │
+│   IDE, CI, etc.)  │     │                         │     │              │
+└───────────────────┘     │  blocked? -> exit 128   │     └──────────────┘
+                          │  allowed? -> exec real  │
+                          └─────────────────────────┘
 ```
 
 ### Why PATH Shadowing Instead of Moving the Binary
@@ -74,61 +103,53 @@ Normal everyday git operations pass through transparently:
 - `git restore --staged <file>` (unstaging specific files)
 - `git tag`, `git remote`, `git config`
 
-## Quickstart
+## Installation
+
+### Pre-built binary (recommended)
+
+No build tools required. The install script auto-detects your platform:
 
 ```bash
-# 1. Install Bun if you don't have it
-curl -fsSL https://bun.sh/install | bash
-
-# 2. Clone the repo
-git clone https://github.com/josiahbryan/git-guardrails.git
-cd git-guardrails
-
-# 3. Build and install (one command)
-bun install && bun run build && bash scripts/install.sh
-
-# 4. Verify it works
-git status          # ✓ works normally
-git stash           # ✗ BLOCKED
+curl -fsSL https://raw.githubusercontent.com/josiahbryan/git-guardrails/main/scripts/install-remote.sh | bash
 ```
 
-That's it. Every `git` call on your system now goes through the guardrails.
+**Supported platforms:**
 
-## Installation (Detailed)
+| Platform | Architecture |
+|----------|-------------|
+| macOS | Apple Silicon (M1/M2/M3/M4) |
+| macOS | Intel x86_64 |
+| Linux | x86_64 |
+| Linux | ARM64 / aarch64 |
 
-### Prerequisites
+**Where it installs:**
+- macOS with Homebrew: `/opt/homebrew/bin/git` (Apple Silicon) or `/usr/local/bin/git` (Intel)
+- Linux: `/usr/local/bin/git` (may prompt for sudo)
 
-- **macOS** with [Homebrew](https://brew.sh/) installed (the wrapper is placed in `/opt/homebrew/bin/`)
-- **[Bun](https://bun.sh/)** v1.0+ (used to compile the wrapper into a native binary)
+The install directory must appear before `/usr/bin` in your `$PATH` so the wrapper shadows the real git.
 
-### Step-by-Step
+### Build from source
+
+Requires [Bun](https://bun.sh/) v1.0+:
 
 ```bash
-# Clone the repository
 git clone https://github.com/josiahbryan/git-guardrails.git
 cd git-guardrails
-
-# Install dev dependencies
 bun install
-
-# Compile TypeScript to a native binary
 bun run build
-
-# Install the wrapper into /opt/homebrew/bin/git (no sudo needed)
 bash scripts/install.sh
 ```
 
-### Verify Installation
+### Verify
 
 ```bash
 # Confirm the wrapper is active
 which git
-# Expected: /opt/homebrew/bin/git
+# Expected: /opt/homebrew/bin/git (or /usr/local/bin/git)
 
 # Safe commands work normally
 git status
 git log --oneline -5
-git diff
 
 # Dangerous commands are blocked
 git stash          # BLOCKED
@@ -141,16 +162,22 @@ git clean -f       # BLOCKED
 ### Uninstall
 
 ```bash
+# If installed from source:
 bash scripts/uninstall.sh
+
+# If installed via curl:
+rm /opt/homebrew/bin/git    # macOS Apple Silicon
+rm /usr/local/bin/git       # macOS Intel or Linux
 ```
 
-This removes the wrapper from `/opt/homebrew/bin/git`, restoring the original `/usr/bin/git` as the only git in PATH.
-
-### Updating After Rule Changes
+### Updating
 
 ```bash
-cd git-guardrails
-bun run build && bash scripts/install.sh
+# Pre-built: just re-run the install script
+curl -fsSL https://raw.githubusercontent.com/josiahbryan/git-guardrails/main/scripts/install-remote.sh | bash
+
+# From source:
+cd git-guardrails && git pull && bun run build && bash scripts/install.sh
 ```
 
 ## Development
