@@ -74,39 +74,68 @@ Normal everyday git operations pass through transparently:
 - `git restore --staged <file>` (unstaging specific files)
 - `git tag`, `git remote`, `git config`
 
-## Installation
+## Quickstart
+
+```bash
+# 1. Install Bun if you don't have it
+curl -fsSL https://bun.sh/install | bash
+
+# 2. Clone the repo
+git clone https://github.com/josiahbryan/git-guardrails.git
+cd git-guardrails
+
+# 3. Build and install (one command)
+bun install && bun run build && bash scripts/install.sh
+
+# 4. Verify it works
+git status          # ✓ works normally
+git stash           # ✗ BLOCKED
+```
+
+That's it. Every `git` call on your system now goes through the guardrails.
+
+## Installation (Detailed)
 
 ### Prerequisites
 
-- macOS with Homebrew (for `/opt/homebrew/bin/` in PATH)
-- [Bun](https://bun.sh/) (for building)
+- **macOS** with [Homebrew](https://brew.sh/) installed (the wrapper is placed in `/opt/homebrew/bin/`)
+- **[Bun](https://bun.sh/)** v1.0+ (used to compile the wrapper into a native binary)
 
-### Build and Install
+### Step-by-Step
 
 ```bash
-cd ~/devel/git-guardrails
+# Clone the repository
+git clone https://github.com/josiahbryan/git-guardrails.git
+cd git-guardrails
 
 # Install dev dependencies
 bun install
 
-# Compile to native binary
+# Compile TypeScript to a native binary
 bun run build
 
-# Install wrapper (no sudo needed)
+# Install the wrapper into /opt/homebrew/bin/git (no sudo needed)
 bash scripts/install.sh
 ```
 
-### Verify
+### Verify Installation
 
 ```bash
-# Should work normally
+# Confirm the wrapper is active
+which git
+# Expected: /opt/homebrew/bin/git
+
+# Safe commands work normally
 git status
 git log --oneline -5
+git diff
 
-# Should be blocked
+# Dangerous commands are blocked
 git stash          # BLOCKED
 git reset --hard   # BLOCKED
 git checkout .     # BLOCKED
+git push --force   # BLOCKED
+git clean -f       # BLOCKED
 ```
 
 ### Uninstall
@@ -117,12 +146,12 @@ bash scripts/uninstall.sh
 
 This removes the wrapper from `/opt/homebrew/bin/git`, restoring the original `/usr/bin/git` as the only git in PATH.
 
-## Updating Rules
+### Updating After Rule Changes
 
-1. Edit `src/rules.ts` to add, remove, or modify blocked patterns
-2. Run tests: `bun test`
-3. Rebuild: `bun run build`
-4. Reinstall: `bash scripts/install.sh`
+```bash
+cd git-guardrails
+bun run build && bash scripts/install.sh
+```
 
 ## Development
 
