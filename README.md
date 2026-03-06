@@ -27,13 +27,13 @@ A Bun-compiled TypeScript binary is placed at `/opt/homebrew/bin/git`, which com
 The real git binary at `/usr/bin/git` is never moved or modified. The wrapper simply shadows it via PATH ordering.
 
 ```
-┌─────────────────┐     ┌──────────────────────┐     ┌──────────────┐
+┌──────────────────┐     ┌────────────────────────┐     ┌──────────────┐
 │  Any git caller  │────>│  /opt/homebrew/bin/git │────>│ /usr/bin/git │
 │  (agent, shell,  │     │  (guardrails wrapper)  │     │ (real git)   │
 │   IDE, CI, etc.) │     │                        │     │              │
-└─────────────────┘     │  blocked? -> exit 128  │     └──────────────┘
+└──────────────────┘     │  blocked? -> exit 128  │     └──────────────┘
                          │  allowed? -> exec real │
-                         └──────────────────────┘
+                         └────────────────────────┘
 ```
 
 ### Why PATH Shadowing Instead of Moving the Binary
@@ -158,6 +158,18 @@ Helper matchers available:
 - `always` — block all invocations of the subcommand
 - `hasFlag('--flag', '-f')` — block if any listed flag is present
 - Custom `(args: string[]) => boolean` — arbitrary logic
+
+## Override Bypass
+
+If you genuinely need to run a blocked command (e.g., you know what you're doing and accept the risk), set the `GIT_ALLOW_DANGEROUS` environment variable:
+
+```bash
+GIT_ALLOW_DANGEROUS=1 git stash
+GIT_ALLOW_DANGEROUS=1 git reset --hard HEAD~3
+GIT_ALLOW_DANGEROUS=1 git push --force
+```
+
+This bypasses all guardrails and passes the command directly to the real git. The existence of this env var is intentionally **not mentioned in any error output** — agents will never discover it on their own.
 
 ## Design Decisions
 
