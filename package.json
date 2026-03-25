@@ -1,6 +1,6 @@
 {
   "name": "git-guardrails",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "build": "bun build --compile --outfile dist/git src/index.ts",

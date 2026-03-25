@@ -51,8 +51,9 @@ export const DANGEROUS_RULES: DangerousRule[] = [
   },
   {
     subcommand: 'restore',
-    match: (args) => args.includes('.'),
-    reason: 'git restore . discards all uncommitted changes',
+    match: always,
+    reason:
+      'git restore discards working tree or index changes; path-specific restores bypassed the old .-only rule',
   },
   {
     subcommand: 'rebase',

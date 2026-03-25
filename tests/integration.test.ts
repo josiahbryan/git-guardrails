@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dir, '..');
@@ -58,6 +59,47 @@ describe('integration: blocked commands', () => {
     const r = runGit('rebase main');
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain('[git-guardrails] BLOCKED');
+  });
+
+  test('git restore is blocked (any path)', () => {
+    const r = runGit('restore README.md');
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain('[git-guardrails] BLOCKED');
+  });
+
+  test('compiled dist/git blocks git restore', () => {
+    const binary = join(ROOT, 'dist', 'git');
+    if (!existsSync(binary)) {
+      return;
+    }
+    let stderr = '';
+    let status: number | undefined;
+    try {
+      execFileSync(binary, ['restore', 'README.md'], {
+        cwd: ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err: unknown) {
+      const e = err as { stderr?: string; status?: number };
+      stderr = e.stderr ?? '';
+      status = e.status;
+    }
+    expect(status).toBe(128);
+    expect(stderr).toContain('[git-guardrails] BLOCKED');
+  });
+
+  test('compiled dist/git passes git version through', () => {
+    const binary = join(ROOT, 'dist', 'git');
+    if (!existsSync(binary)) {
+      return;
+    }
+    const out = execFileSync(binary, ['version'], {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    expect(String(out)).toMatch(/git version/i);
   });
 });
 

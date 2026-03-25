@@ -4,8 +4,26 @@ import { checkCommand } from './matcher.ts';
 /** Path to the real git binary (untouched at its original location) */
 const REAL_GIT = '/usr/bin/git';
 
+/**
+ * Arguments to pass to the real git binary (subcommand and rest).
+ *
+ * - bun run src/index.ts <args> -> argv [bun, script.ts, ...git] -> drop first two.
+ * - Bun --compile -> argv often [wrapper, /$bunfs/root/git, ...git] -> drop first two.
+ * - Any other [prog, subcommand, ...] -> drop prog only.
+ */
+function gitArgvFromProcessArgv(argv: string[]): string[] {
+  const a1 = argv[1];
+  if (a1 && (a1.endsWith('.ts') || a1.endsWith('.js'))) {
+    return argv.slice(2);
+  }
+  if (a1?.includes('bunfs')) {
+    return argv.slice(2);
+  }
+  return argv.slice(1);
+}
+
 function main(): void {
-  const gitArgs = process.argv.slice(2);
+  const gitArgs = gitArgvFromProcessArgv(process.argv);
 
   // Check for env bypass (never hint at this in output)
   const allowDangerous = process.env['GIT_ALLOW_DANGEROUS'] === '1';

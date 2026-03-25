@@ -18,6 +18,14 @@ describe('checkCommand', () => {
     { args: ['push', 'origin', 'main', '--force'], desc: 'git push origin main --force' },
     { args: ['branch', '-D', 'feature'], desc: 'git branch -D feature' },
     { args: ['restore', '.'], desc: 'git restore .' },
+    {
+      args: ['restore', 'src/index.ts'],
+      desc: 'git restore <file> (path bypass of old .-only rule)',
+    },
+    {
+      args: ['restore', '--staged', 'file.txt'],
+      desc: 'git restore --staged (entire subcommand blocked)',
+    },
     { args: ['rebase', 'main'], desc: 'git rebase main' },
     { args: ['rebase', '--onto', 'main'], desc: 'git rebase --onto main' },
   ];
@@ -48,7 +56,6 @@ describe('checkCommand', () => {
     { args: ['fetch'], desc: 'git fetch' },
     { args: ['remote', '-v'], desc: 'git remote -v' },
     { args: ['tag', 'v1.0'], desc: 'git tag v1.0' },
-    { args: ['restore', '--staged', 'file.txt'], desc: 'git restore --staged file.txt' },
   ];
 
   for (const { args, desc } of allowed) {
@@ -90,17 +97,7 @@ describe('edge cases', () => {
     expect(result.blocked).toBe(true);
   });
 
-  test('ALLOWS: git restore specific file (not .)', () => {
-    const result = checkCommand(['restore', 'src/index.ts']);
-    expect(result.blocked).toBe(false);
-  });
-
-  test('ALLOWS: git restore --staged specific file', () => {
-    const result = checkCommand(['restore', '--staged', 'src/index.ts']);
-    expect(result.blocked).toBe(false);
-  });
-
-  test('BLOCKS: git restore . even with --staged', () => {
+  test('BLOCKS: git restore --staged .', () => {
     const result = checkCommand(['restore', '--staged', '.']);
     expect(result.blocked).toBe(true);
   });

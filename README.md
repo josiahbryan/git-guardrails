@@ -87,7 +87,7 @@ The wrapper is compiled with `bun build --compile` into a native Mach-O binary. 
 | `git clean -f` (any flag containing `-f`) | Permanently deletes untracked files |
 | `git push --force` / `-f` / `--force-with-lease` | Can overwrite remote history |
 | `git branch -D` | Force-deletes a branch without merge check |
-| `git restore .` | Discards all uncommitted changes |
+| `git restore` (all variants) | Discards working tree and/or index changes; path-specific restores bypassed a `.`-only rule |
 | `git rebase` (all variants) | Rewrites commit history |
 
 ### What's NOT Blocked
@@ -100,7 +100,7 @@ Normal everyday git operations pass through transparently:
 - `git checkout <branch>`, `git checkout -b <branch>` (branch switching)
 - `git branch <name>`, `git branch -d <name>` (safe delete)
 - `git reset HEAD~1` (soft reset, without `--hard`)
-- `git restore --staged <file>` (unstaging specific files)
+- `git reset HEAD -- <file>` (unstage paths without using `git restore`)
 - `git tag`, `git remote`, `git config`
 
 ## Installation
@@ -157,6 +157,7 @@ git reset --hard   # BLOCKED
 git checkout .     # BLOCKED
 git push --force   # BLOCKED
 git clean -f       # BLOCKED
+git restore .      # BLOCKED
 ```
 
 ### Uninstall
@@ -183,7 +184,7 @@ cd git-guardrails && git pull && bun run build && bash scripts/install.sh
 ## Development
 
 ```bash
-# Run all tests (55 unit + integration)
+# Run all tests (57 unit + integration)
 bun test
 
 # Project structure
