@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CLAUDE.md` with project architecture, commands, and key design decisions for Claude Code.
+
 ## [1.1.0] - 2026-03-24
 
 ### Security
