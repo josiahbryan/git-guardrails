@@ -89,6 +89,7 @@ The wrapper is compiled with `bun build --compile` into a native Mach-O binary. 
 | `git branch -D` | Force-deletes a branch without merge check |
 | `git restore` (all variants) | Discards working tree and/or index changes; path-specific restores bypassed a `.`-only rule |
 | `git rebase` (all variants) | Rewrites commit history |
+| `git add` / `git commit` (conditional) | Blocked **only when [`git-atomic-commit`](https://github.com/josiahbryan/git-atomic-commit) is installed** — see [Pair with git-atomic-commit](#recommended-pair-with-git-atomic-commit) below |
 
 ### What's NOT Blocked
 
@@ -102,6 +103,23 @@ Normal everyday git operations pass through transparently:
 - `git reset HEAD~1` (soft reset, without `--hard`)
 - `git reset HEAD -- <file>` (unstage paths without using `git restore`)
 - `git tag`, `git remote`, `git config`
+
+## Recommended: Pair with git-atomic-commit
+
+[`git-atomic-commit`](https://github.com/josiahbryan/git-atomic-commit) is a companion tool that wraps staging + committing into a single locked operation, like a database transaction for your git index. It prevents the classic multi-agent race condition where Agent A stages a file, Agent B stages another, and A's commit accidentally sweeps up B's file too.
+
+When git-guardrails detects that `git-atomic-commit` is on your `PATH`, it automatically enforces its usage: raw `git add` and `git commit` are blocked, and agents are directed to use `git-atomic-commit commit -f <files> -m <msg>` instead. If `git-atomic-commit` is not installed, nothing changes — plain `add`/`commit` continue to work as normal.
+
+Install git-atomic-commit:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/josiahbryan/git-atomic-commit/main/scripts/install-remote.sh | bash
+```
+
+Together the two tools give you end-to-end safety for multi-agent workflows:
+
+- **git-guardrails** blocks destructive operations (`stash`, `reset --hard`, `checkout .`, force-push, etc.) and, when paired, enforces atomic staging + commit.
+- **git-atomic-commit** serializes the staging area with a per-repo lock so concurrent agents can't clobber each other's work.
 
 ## Installation
 
@@ -189,14 +207,16 @@ bun test
 
 # Project structure
 src/
-├── index.ts      # Entry point: argv parsing, block check, exec passthrough
-├── rules.ts      # Blocklist rule definitions (DangerousRule[])
-└── matcher.ts    # Command matching logic (checkCommand)
+├── index.ts            # Entry point: argv parsing, block check, exec passthrough
+├── rules.ts            # Blocklist rule definitions (DangerousRule[])
+├── matcher.ts          # Command matching logic (checkCommand)
+└── atomic-commit.ts    # git-atomic-commit detection + GIT_ATOMIC_COMMIT bypass
 
 tests/
-├── rules.test.ts       # Unit tests for rule structure
-├── matcher.test.ts      # Unit tests for all blocked/allowed commands
-└── integration.test.ts  # End-to-end tests via bun subprocess
+├── rules.test.ts            # Unit tests for rule structure
+├── matcher.test.ts          # Unit tests for all blocked/allowed commands
+├── integration.test.ts      # End-to-end tests via bun subprocess
+└── atomic-commit.test.ts    # Unit + integration tests for atomic-commit enforcement
 ```
 
 ### Adding a New Rule

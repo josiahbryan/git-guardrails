@@ -1,3 +1,5 @@
+import { requiresAtomicCommit, ATOMIC_COMMIT_REASON } from './atomic-commit.ts';
+
 export interface DangerousRule {
   /** Git subcommand to match (first positional arg) */
   subcommand: string;
@@ -59,5 +61,17 @@ export const DANGEROUS_RULES: DangerousRule[] = [
     subcommand: 'rebase',
     match: always,
     reason: 'git rebase rewrites commit history',
+  },
+
+  // Atomic-commit enforcement (active only when git-atomic-commit is installed)
+  {
+    subcommand: 'add',
+    match: requiresAtomicCommit,
+    reason: ATOMIC_COMMIT_REASON,
+  },
+  {
+    subcommand: 'commit',
+    match: requiresAtomicCommit,
+    reason: ATOMIC_COMMIT_REASON,
   },
 ];
