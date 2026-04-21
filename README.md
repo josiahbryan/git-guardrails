@@ -79,17 +79,17 @@ The wrapper is compiled with `bun build --compile` into a native Mach-O binary. 
 
 ## Blocked Commands
 
-| Command | Reason |
-|---------|--------|
-| `git stash` (all variants) | Can lose uncommitted work when agents forget to pop |
-| `git reset --hard` | Permanently discards uncommitted changes |
-| `git checkout .` / `git checkout -- <file>` | Discards uncommitted changes to files |
-| `git clean -f` (any flag containing `-f`) | Permanently deletes untracked files |
-| `git push --force` / `-f` / `--force-with-lease` | Can overwrite remote history |
-| `git branch -D` | Force-deletes a branch without merge check |
-| `git restore` (all variants) | Discards working tree and/or index changes; path-specific restores bypassed a `.`-only rule |
-| `git rebase` (all variants) | Rewrites commit history |
-| `git add` / `git commit` (conditional) | Blocked **only when [`git-atomic-commit`](https://github.com/josiahbryan/git-atomic-commit) is installed** — see [Pair with git-atomic-commit](#recommended-pair-with-git-atomic-commit) below |
+| Command | Reason | Bypassed in linked worktree? |
+|---------|--------|------------------------------|
+| `git stash` (all variants) | Can lose uncommitted work when agents forget to pop | No (stash stack is shared across worktrees) |
+| `git reset --hard` | Permanently discards uncommitted changes | **Yes** (scope is local to the worktree) |
+| `git checkout .` / `git checkout -- <file>` | Discards uncommitted changes to files | **Yes** (scope is local to the worktree) |
+| `git clean -f` (any flag containing `-f`) | Permanently deletes untracked files | **Yes** (scope is local to the worktree) |
+| `git push --force` / `-f` / `--force-with-lease` | Can overwrite remote history | No (remote is shared) |
+| `git branch -D` | Force-deletes a branch without merge check | No (refs are shared) |
+| `git restore` (all variants) | Discards working tree and/or index changes; path-specific restores bypassed a `.`-only rule | **Yes** (scope is local to the worktree) |
+| `git rebase` (all variants) | Rewrites commit history | No (history is shared) |
+| `git add` / `git commit` (conditional) | Blocked **only when [`git-atomic-commit`](https://github.com/josiahbryan/git-atomic-commit) is installed** — see [Pair with git-atomic-commit](#recommended-pair-with-git-atomic-commit) below | No |
 
 ### What's NOT Blocked
 
@@ -210,12 +210,14 @@ src/
 ├── index.ts            # Entry point: argv parsing, block check, exec passthrough
 ├── rules.ts            # Blocklist rule definitions (DangerousRule[])
 ├── matcher.ts          # Command matching logic (checkCommand)
+├── worktree.ts         # Linked-worktree detection (per-rule bypass)
 └── atomic-commit.ts    # git-atomic-commit detection + GIT_ATOMIC_COMMIT bypass
 
 tests/
 ├── rules.test.ts            # Unit tests for rule structure
 ├── matcher.test.ts          # Unit tests for all blocked/allowed commands
 ├── integration.test.ts      # End-to-end tests via bun subprocess
+├── worktree.test.ts         # Linked-worktree detection + bypass (unit + real git)
 └── atomic-commit.test.ts    # Unit + integration tests for atomic-commit enforcement
 ```
 
@@ -235,6 +237,19 @@ Helper matchers available:
 - `always` — block all invocations of the subcommand
 - `hasFlag('--flag', '-f')` — block if any listed flag is present
 - Custom `(args: string[]) => boolean` — arbitrary logic
+
+## Linked Worktree Bypass
+
+Operations whose destructive scope is limited to the current working tree are **automatically allowed when you're inside a linked git worktree** (anything created via `git worktree add`). The main worktree still has all guardrails on.
+
+This exists because linked worktrees are commonly used as throwaway sandboxes for agent experiments / best-of-N runs. Inside one of those, a `git reset --hard` only wipes that sandbox — it can't touch the main checkout, other worktrees, the shared ref store, or the remote.
+
+| In a linked worktree | Behavior |
+|----------------------|----------|
+| `git reset --hard`, `git checkout .`, `git restore`, `git clean -f` | Allowed (worktree-local) |
+| `git stash`, `git push --force`, `git branch -D`, `git rebase` | Still blocked (shared repo / remote) |
+
+Detection uses `git rev-parse --git-dir --git-common-dir`: in the main worktree these are equal, in a linked worktree they differ. If you're not in a git repo at all, guardrails stay on.
 
 ## Override Bypass
 

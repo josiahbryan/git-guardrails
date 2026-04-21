@@ -1,4 +1,5 @@
 import { DANGEROUS_RULES } from './rules.ts';
+import { isInLinkedWorktree } from './worktree.ts';
 
 export interface CheckResult {
   blocked: boolean;
@@ -15,6 +16,12 @@ export function checkCommand(args: string[]): CheckResult {
 
   for (const rule of DANGEROUS_RULES) {
     if (rule.subcommand === subcommand && rule.match(restArgs)) {
+      // Linked-worktree bypass: only consult worktree detection after a rule
+      // has already matched, so non-blocked commands pay zero cost (no git
+      // subprocess spawned). See src/worktree.ts for the detection logic.
+      if (rule.allowedInLinkedWorktree && isInLinkedWorktree()) {
+        return { blocked: false };
+      }
       return { blocked: true, reason: rule.reason };
     }
   }

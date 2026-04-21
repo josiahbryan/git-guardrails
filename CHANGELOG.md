@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-20
+
+### Added
+
+- **Linked-worktree bypass** — destructive operations whose scope is strictly local to the current working tree (`git reset --hard`, `git checkout .` / `git checkout -- <path>`, `git restore`, `git clean -f`) are now automatically allowed when the wrapper is invoked from inside a linked git worktree (anything created via `git worktree add`). The main worktree still has all guardrails on. This makes throwaway agent sandboxes (best-of-N, experimental branches) ergonomic without loosening protection of the primary checkout.
+- Operations whose destructive scope is the shared repo or remote (`git stash`, `git push --force`, `git branch -D`, `git rebase`) remain blocked even inside a linked worktree, because being in a linked worktree does not make those any less destructive.
+- `src/worktree.ts` with the detection logic (`git rev-parse --git-dir --git-common-dir` comparison, cached per process) and a new optional `allowedInLinkedWorktree` flag on `DangerousRule` in `src/rules.ts`. Detection is only consulted after a rule has already matched, so non-blocked commands pay zero extra cost.
+- `tests/worktree.test.ts` covering unit-level matcher behavior, real-git detection inside an actual `git worktree add`-created worktree, and end-to-end runs of the wrapper itself from inside a linked worktree.
+- README section documenting the bypass and a new "Bypassed in linked worktree?" column on the blocked-commands table.
+
 ## [1.2.0] - 2026-04-16
 
 ### Added
@@ -36,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration tests for compiled `dist/git`: `git restore` blocked, `git version` passthrough.
 - This changelog.
 
-[Unreleased]: https://github.com/josiahbryan/git-guardrails/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/josiahbryan/git-guardrails/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/josiahbryan/git-guardrails/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/josiahbryan/git-guardrails/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/josiahbryan/git-guardrails/compare/v1.0.0...v1.1.0
