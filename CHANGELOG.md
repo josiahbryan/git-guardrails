@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-09
+
+### Added
+
+- **Process-bound agent-mode detection** (new `src/agent-detection.ts`). A process is considered to be in "agent mode" when either `GIT_GUARDRAILS_AGENT_MODE=1` is set, or `GIT_AUTHOR_EMAIL` / `GIT_COMMITTER_EMAIL` matches a known agent-identity pattern (currently `^ops-agent@`). Used to gate restrictions that are appropriate for autonomous agents but would over-restrict humans.
+- **`agentOnly?` flag on `DangerousRule`** (in `src/rules.ts`) and corresponding check in `src/matcher.ts`. Rules marked `agentOnly: true` apply ONLY when the agent-mode signal is present; humans driving the wrapper interactively are unaffected. Gate is checked AFTER the structural rule match so the cheap env lookup only happens for matched commands.
+- **`git checkout --ours/--theirs <path>` is blocked** (universal). Picks one side of a merge conflict, silently discarding the other. No agent should auto-resolve conflicts; humans rarely need this either (most resolutions go via `mergetool` or manual edit).
+- **`git merge -X ours/theirs` and `--strategy=ours/theirs` are blocked** (universal). Catches all spellings: `-X ours`, `-Xours`, `--strategy-option=ours`, `--strategy-option ours`, `--strategy=ours`, `-s ours`, `-sours`. Same rationale — silently discards one side of every conflict.
+- **`git config user.name`/`user.email` is blocked at default scope** (universal). Writes to the repo (or shared-worktree) config file and silently re-attributes every subsequent commit by every user/process in the entire repo to the new identity. The 2026-05-04 incident in the rubber repo (an ops-agent ran `git config user.email "ops-agent@rubber.ci"` from a worktree, which writes to the SHARED `.git/config` of the main checkout) is the canonical example. Use `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/`GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` env vars instead — they apply only to the current process tree. `--global` and `--system` writes are explicitly ALLOWED (no worktree-pollution problem); `--unset` / `--unset-all` are always ALLOWED (cleanup, never creates pollution).
+- **`git push <refspec>:develop` (and `:main`/`:master`/`:production`) is blocked in agent mode**. Catches `git push origin develop`, `git push origin HEAD:develop`, `git push origin agent-fix:develop`, `git push origin :develop` (delete remote). Closes the bypass-protection pattern where an ops-agent token with admin scope produces "Bypassed rule violations for refs/heads/develop" pushes. Humans pushing develop interactively are unaffected because they're not in agent mode.
+- **`git push --no-verify` is blocked in agent mode**. Skips the pre-push hook safety net. Humans sometimes do this legitimately for checkpoint commits; agents must not — the hook chain is part of the only review layer that runs for unattended runs.
+
+### Why
+
+Two separate failure modes from the rubber repo's ops-agent that both trace to "rules in a prompt are not enforcement":
+
+1. The 2026-05-06 incident where an ops-agent merged `origin/develop` into a worktree, resolved every conflict via `git checkout --ours`/programmatic `git show :2:<file>` workarounds, and pushed the merge commit to develop with `--no-verify` (producing GitHub's `Bypassed rule violations for refs/heads/develop` on output). Erased a user commit from origin/develop.
+2. The 2026-05-04 incident where an ops-agent ran `git config user.email ops-agent@rubber.ci` from a worktree, which (because worktrees share `.git/config` with the main checkout) silently overwrote the user's repo-local identity for the entire rubber repo and all its worktrees. From that point until 2026-05-09, every commit by every user/process was attributed to "Ops Agent."
+
+Rules 7, 8, and 12 in the rubber `ci-ops` SKILL.md document these as forbidden; this release moves the enforcement from prompt to wrapper.
+
+### Test injection
+
+The agent-mode detection is testable via the standard `GIT_GUARDRAILS_AGENT_MODE` env var. Tests for the new rules live in `tests/matcher.test.ts` (universal rules) and `tests/agent-detection.test.ts` (detection helper). The `_setAtomicCommitInstalled(false)` mock is now used in the matcher test setup so the matcher tests don't false-fail when git-atomic-commit happens to be on PATH.
+
+
 ## [1.3.0] - 2026-04-20
 
 ### Added

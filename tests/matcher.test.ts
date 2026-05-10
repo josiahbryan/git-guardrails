@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { _resetAtomicCommitCache, _setAtomicCommitInstalled } from '../src/atomic-commit.ts';
 import { checkCommand } from '../src/matcher.ts';
+
+beforeAll(() => { _setAtomicCommitInstalled(false); });
+afterAll(() => { _resetAtomicCommitCache(); });
 
 describe('checkCommand', () => {
   const blocked = [
@@ -100,5 +104,85 @@ describe('edge cases', () => {
   test('BLOCKS: git restore --staged .', () => {
     const result = checkCommand(['restore', '--staged', '.']);
     expect(result.blocked).toBe(true);
+  });
+});
+
+describe('checkout --ours/--theirs', () => {
+  for (const args of [['checkout','--ours','a.ts'],['checkout','--theirs','a.ts'],['checkout','-q','--ours','a.ts']]) {
+    test(`BLOCKS: ${args.join(' ')}`, () => {
+      const r = checkCommand(args);
+      expect(r.blocked).toBe(true);
+      expect(r.reason).toContain('--ours');
+    });
+  }
+  test('ALLOWS: git checkout main', () => { expect(checkCommand(['checkout','main']).blocked).toBe(false); });
+});
+
+describe('merge -X ours/theirs and --strategy=ours', () => {
+  for (const args of [['merge','-X','ours','f'],['merge','-X','theirs','f'],['merge','-Xours','f'],['merge','--strategy-option=ours','f'],['merge','--strategy-option','ours','f'],['merge','--strategy=ours','f'],['merge','-s','ours','f'],['merge','-sours','f']]) {
+    test(`BLOCKS: ${args.join(' ')}`, () => {
+      const r = checkCommand(args);
+      expect(r.blocked).toBe(true);
+      expect(r.reason).toContain('side');
+    });
+  }
+  test('ALLOWS: git merge feature', () => { expect(checkCommand(['merge','feature']).blocked).toBe(false); });
+  test('ALLOWS: git merge -X patience feature', () => { expect(checkCommand(['merge','-X','patience','feature']).blocked).toBe(false); });
+  test('ALLOWS: git merge --strategy=recursive feature', () => { expect(checkCommand(['merge','--strategy=recursive','feature']).blocked).toBe(false); });
+});
+
+describe('git config user.* pollution guard', () => {
+  test('BLOCKS: git config user.name "Foo"', () => {
+    const r = checkCommand(['config', 'user.name', 'Foo']);
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain('GIT_AUTHOR_NAME');
+  });
+  test('BLOCKS: git config user.email foo@bar', () => { expect(checkCommand(['config','user.email','foo@bar']).blocked).toBe(true); });
+  test('BLOCKS: git config --local user.name "Foo"', () => { expect(checkCommand(['config','--local','user.name','Foo']).blocked).toBe(true); });
+  test('ALLOWS: git config --global user.name "Foo"', () => { expect(checkCommand(['config','--global','user.name','Foo']).blocked).toBe(false); });
+  test('ALLOWS: git config --system user.name "Foo"', () => { expect(checkCommand(['config','--system','user.name','Foo']).blocked).toBe(false); });
+  test('ALLOWS: git config --unset user.name', () => { expect(checkCommand(['config','--unset','user.name']).blocked).toBe(false); });
+  test('ALLOWS: git config core.editor vim', () => { expect(checkCommand(['config','core.editor','vim']).blocked).toBe(false); });
+  test('ALLOWS: git config --list', () => { expect(checkCommand(['config','--list']).blocked).toBe(false); });
+});
+
+describe('agent-only rules', () => {
+  const ENV_KEYS = ['GIT_GUARDRAILS_AGENT_MODE','GIT_AUTHOR_EMAIL','GIT_COMMITTER_EMAIL'];
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => { for (const k of ENV_KEYS) { saved[k] = process.env[k]; delete process.env[k]; } });
+  afterEach(() => { for (const k of ENV_KEYS) { const v = saved[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  describe('push to protected branches', () => {
+    const cases = [['push','origin','develop'],['push','origin','HEAD:develop'],['push','origin','agent-fix:develop'],['push','origin',':develop'],['push','origin','main'],['push','origin','HEAD:main'],['push','origin','master'],['push','origin','HEAD:production']];
+    for (const args of cases) {
+      test(`BLOCKS in agent mode: ${args.join(' ')}`, () => {
+        process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+        const r = checkCommand(args);
+        expect(r.blocked).toBe(true);
+        expect(r.reason).toContain('protected branches');
+      });
+      test(`ALLOWS for humans: ${args.join(' ')}`, () => {
+        expect(checkCommand(args).blocked).toBe(false);
+      });
+    }
+    test('ALLOWS in agent mode: feature-branch', () => { process.env['GIT_GUARDRAILS_AGENT_MODE']='1'; expect(checkCommand(['push','origin','feature-branch']).blocked).toBe(false); });
+    test('ALLOWS in agent mode: HEAD:agent-fix-foo', () => { process.env['GIT_GUARDRAILS_AGENT_MODE']='1'; expect(checkCommand(['push','origin','HEAD:agent-fix-foo']).blocked).toBe(false); });
+    test("doesn't false-match developement / feature/develop-stuff", () => {
+      process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+      expect(checkCommand(['push','origin','developement']).blocked).toBe(false);
+      expect(checkCommand(['push','origin','feature/develop-stuff']).blocked).toBe(false);
+    });
+    test('agent mode triggers via GIT_AUTHOR_EMAIL', () => {
+      process.env['GIT_AUTHOR_EMAIL'] = 'ops-agent@rubber.ci';
+      expect(checkCommand(['push','origin','develop']).blocked).toBe(true);
+    });
+  });
+  describe('push --no-verify', () => {
+    test('BLOCKS in agent mode', () => {
+      process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+      const r = checkCommand(['push','--no-verify','origin','feature']);
+      expect(r.blocked).toBe(true);
+      expect(r.reason).toContain('--no-verify');
+    });
+    test('ALLOWS for humans', () => { expect(checkCommand(['push','--no-verify','origin','feature']).blocked).toBe(false); });
   });
 });

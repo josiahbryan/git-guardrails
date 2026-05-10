@@ -17,6 +17,8 @@ export interface DangerousRule {
    * make those any less destructive.
    */
   allowedInLinkedWorktree?: boolean;
+  /** If true, applies only when the process is in agent mode (see agent-detection.ts). */
+  agentOnly?: boolean;
 }
 
 /** Always match — any invocation of this subcommand is dangerous */
@@ -100,5 +102,69 @@ export const DANGEROUS_RULES: DangerousRule[] = [
     subcommand: 'commit',
     match: requiresAtomicCommit,
     reason: ATOMIC_COMMIT_REASON,
+  },
+  // ── Merge-conflict-side-pick rules (universal) ──────────────────
+  {
+    subcommand: 'checkout',
+    match: (args) => args.includes('--ours') || args.includes('--theirs'),
+    reason: 'git checkout --ours/--theirs picks one side of a merge conflict, silently discarding the other. Surface the conflict and resolve manually.',
+  },
+  {
+    subcommand: 'merge',
+    match: (args) => {
+      const sides = new Set(['ours', 'theirs']);
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === undefined) continue;
+        if (a === '-X' || a === '--strategy-option') {
+          const next = args[i + 1];
+          if (next && sides.has(next)) return true;
+        }
+        if (a.startsWith('-X') && a.length > 2 && sides.has(a.slice(2))) return true;
+        if (a.startsWith('--strategy-option=') && sides.has(a.slice('--strategy-option='.length))) return true;
+        if (a === '-s' || a === '--strategy') {
+          const next = args[i + 1];
+          if (next && sides.has(next)) return true;
+        }
+        if (a.startsWith('-s') && a.length > 2 && sides.has(a.slice(2))) return true;
+        if (a.startsWith('--strategy=') && sides.has(a.slice('--strategy='.length))) return true;
+      }
+      return false;
+    },
+    reason: 'git merge with -X ours/theirs (or --strategy=ours/theirs) silently picks one side for every conflict. Surface conflicts and resolve manually.',
+  },
+
+  // ── Identity-pollution rule (universal) ─────────────────────────
+  {
+    subcommand: 'config',
+    match: (args) => {
+      if (args.includes('--unset') || args.includes('--unset-all')) return false;
+      if (args.includes('--global') || args.includes('--system')) return false;
+      return args.some((a) => a === 'user.name' || a === 'user.email');
+    },
+    reason: 'Setting user.name/user.email via `git config` writes to the repo (or shared) config and pollutes other users committing in the same repo. Use GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL/GIT_COMMITTER_NAME/GIT_COMMITTER_EMAIL env vars instead. (--global and --system are allowed; --unset is always allowed.)',
+  },
+
+  // ── Agent-only rules ────────────────────────────────────────────
+  {
+    subcommand: 'push',
+    match: (args) => {
+      const protectedTargets = ['develop', 'main', 'master', 'production'];
+      for (const a of args) {
+        if (protectedTargets.includes(a)) return true;
+        for (const t of protectedTargets) {
+          if (a === `:${t}` || a.endsWith(`:${t}`)) return true;
+        }
+      }
+      return false;
+    },
+    reason: 'Ops-agent runs must not push directly to protected branches (develop / main / master / production). Open a PR instead.',
+    agentOnly: true,
+  },
+  {
+    subcommand: 'push',
+    match: (args) => args.includes('--no-verify'),
+    reason: 'Ops-agent runs must not push with --no-verify. The pre-push hook chain is part of the only review layer that runs for unattended commits.',
+    agentOnly: true,
   },
 ];
