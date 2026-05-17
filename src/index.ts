@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { checkCommand } from './matcher.ts';
+import { runPlugin, shouldRunPlugin } from './plugin.ts';
 
 /** Path to the real git binary (untouched at its original location) */
 const REAL_GIT = '/usr/bin/git';
@@ -39,11 +40,35 @@ function main(): void {
     }
   }
 
+  // Identity-injection plugin (no-op when not configured). Runs AFTER the
+  // block check so the plugin can't escalate permissions. Only fires for
+  // commit-creating subcommands; everything else pays zero plugin cost.
+  // See src/plugin.ts for the full contract.
+  const subcommand = gitArgs[0];
+  let finalArgs = gitArgs;
+  let finalEnv: NodeJS.ProcessEnv = process.env;
+  if (shouldRunPlugin(subcommand)) {
+    const injection = runPlugin(subcommand!);
+    if (
+      injection.preArgs.length > 0 ||
+      injection.postArgs.length > 0 ||
+      Object.keys(injection.env).length > 0
+    ) {
+      finalArgs = [
+        ...injection.preArgs,
+        subcommand!,
+        ...gitArgs.slice(1),
+        ...injection.postArgs,
+      ];
+      finalEnv = { ...process.env, ...injection.env };
+    }
+  }
+
   // Pass through to real git
   try {
-    execFileSync(REAL_GIT, gitArgs, {
+    execFileSync(REAL_GIT, finalArgs, {
       stdio: 'inherit',
-      env: process.env,
+      env: finalEnv,
     });
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'status' in err) {

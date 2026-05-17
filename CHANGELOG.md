@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-17
+
+### Added
+
+- **Identity-injection plugin contract** (new `src/plugin.ts`). When `GIT_GUARDRAILS_IDENTITY_PLUGIN` is set to the path of an executable script, the wrapper invokes that script BEFORE exec'ing real git for any commit-creating subcommand (`commit` / `cherry-pick` / `revert` / `merge` / `rebase`). The plugin emits `KEY=VALUE` lines on stdout. `COMMIT_TRAILER=<value>` lines are translated into `--trailer "<value>"` args injected into the git argv (with `-c trailer.ifExists=addIfDifferentNeighbor` prepended once so rebase replays don't accumulate duplicates). Every other `KEY=VALUE` line is exported into the env passed to the real-git exec (so plugins can override `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL`/`GIT_AUTHOR_*`/anything else). The plugin contract is intentionally narrow — stdin-less, no positional args, gets the subcommand via `GIT_GUARDRAILS_SUBCOMMAND` in env. Wrapper imposes a 3-second timeout; plugin failures (non-zero exit, timeout) log a one-line stderr warning and the wrapper proceeds with no injection so a broken plugin can never break git.
+- **Plugin-only check** in `src/plugin.ts:shouldRunPlugin` — the plugin is gated on both (a) the env var being set to a path that exists AND (b) the subcommand being one that creates commits. Non-commit verbs (`status`, `log`, `diff`, `fetch`, `push`, …) pay zero plugin overhead.
+- **Tests** (`tests/plugin.test.ts`) — 19 cases covering `parsePluginOutput` (empty input, single + multiple `COMMIT_TRAILER`s, env vars only, mixed, malformed lines, embedded `=` in value, whitespace handling), `shouldRunPlugin` (env unset / file missing / non-commit subcommand / undefined / each commit verb), and end-to-end integration (plugin-not-configured pass-through, non-zero exit produces stderr warning, non-commit subcommand never invokes plugin, plugin sees `GIT_GUARDRAILS_SUBCOMMAND` in env).
+
+### Why
+
+The rubber monorepo runs many concurrent Claude/Cursor/Codex sessions, each potentially under a different bc-task. The existing `agent-hooks.ts` already tracks per-session active task IDs in `~/.claude/agent-tasks-state/`. We want commits to carry that linkage so post-hoc commit archaeology can resolve back to the originating session and task, without git-guardrails itself knowing the word "bc-task" exists. The plugin contract is the seam: bc-task ships its own plugin (TTY → session file → active task → emit committer-overrides + a `Co-Authored-By` trailer); git-guardrails consumes the generic `COMMIT_TRAILER=` / `KEY=VALUE` output. Same seam works for any future provenance tooling.
+
 ## [1.5.0] - 2026-05-09
 
 ### Added

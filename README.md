@@ -251,6 +251,47 @@ This exists because linked worktrees are commonly used as throwaway sandboxes fo
 
 Detection uses `git rev-parse --git-dir --git-common-dir`: in the main worktree these are equal, in a linked worktree they differ. If you're not in a git repo at all, guardrails stay on.
 
+## Identity-Injection Plugin
+
+Set `GIT_GUARDRAILS_IDENTITY_PLUGIN=/path/to/script` to inject extra identity (committer name/email, message trailers, etc.) into every commit-creating git invocation. The wrapper runs the script before exec'ing real git, and the script's stdout drives env vars + git argv additions.
+
+### Why
+
+If you're running many concurrent agent sessions (Claude Code, Cursor, Codex, custom harnesses) and want to track commit provenance back to whichever session/task originated the commit, a plugin can look up the active session's identity and emit it as a `Co-Authored-By:` trailer + a `GIT_COMMITTER_*` override. The wrapper stays domain-agnostic — it just applies whatever the plugin produces.
+
+### Plugin contract
+
+- Invoked **only for commit-creating subcommands** (`commit`, `cherry-pick`, `revert`, `merge`, `rebase`). Everything else pays zero plugin overhead.
+- No positional args, no stdin. The about-to-run verb is in `GIT_GUARDRAILS_SUBCOMMAND` (so the plugin can emit different things for `commit` vs `rebase`).
+- 3-second timeout. Non-zero exit, timeout, or unreadable executable logs a one-line stderr warning and the wrapper proceeds with **no injection** — a broken plugin must never break git.
+- Plugin emits `KEY=VALUE` lines on stdout (uppercase keys only — `^[A-Z_][A-Z0-9_]*$`). Two recognized shapes:
+  - **`COMMIT_TRAILER=<trailer line>`** — wrapper injects `--trailer "<value>"` into the git argv. Multiple lines = multiple trailers. When any trailer is emitted the wrapper also prepends `-c trailer.ifExists=addIfDifferentNeighbor` so rebase replays dedupe duplicates.
+  - **Anything else** (e.g. `GIT_COMMITTER_NAME=foo`, `GIT_AUTHOR_EMAIL=foo@bar`, `MY_CUSTOM_VAR=value`) — exported into the env passed to the real-git exec.
+
+### Example plugin
+
+```bash
+#!/bin/bash
+# /usr/local/bin/my-identity-plugin
+# Emits a committer override + a co-author trailer keyed off whatever
+# you care to track (here: a hypothetical TASK_ID env from the parent shell).
+if [ -n "$TASK_ID" ]; then
+  echo "GIT_COMMITTER_NAME=task-$TASK_ID"
+  echo "GIT_COMMITTER_EMAIL=$TASK_ID@tasks.internal"
+  echo "COMMIT_TRAILER=Co-Authored-By: task-$TASK_ID <$TASK_ID@tasks.internal>"
+fi
+```
+
+```bash
+chmod +x /usr/local/bin/my-identity-plugin
+export GIT_GUARDRAILS_IDENTITY_PLUGIN=/usr/local/bin/my-identity-plugin
+# Now every `git commit` made under a session with TASK_ID set gets the
+# task-tagged committer + a durable Co-Authored-By trailer in the commit
+# message body (which survives rebases).
+```
+
+The plugin lives entirely outside this repo — git-guardrails has no dependency on or knowledge of any specific provenance system. Write one plugin per workflow.
+
 ## Override Bypass
 
 If you genuinely need to run a blocked command (e.g., you know what you're doing and accept the risk), set the `GIT_ALLOW_DANGEROUS` environment variable:
