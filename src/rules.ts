@@ -32,6 +32,33 @@ const hasFlag = (...flags: string[]) => (args: string[]): boolean =>
 const hasFileRestore = (args: string[]): boolean =>
   args.includes('.') || args.includes('--');
 
+const PROTECTED_BRANCHES = ['develop', 'main', 'master', 'production'];
+
+function isProtectedBranch(branch: string): boolean {
+  return PROTECTED_BRANCHES.includes(branch);
+}
+
+function isProtectedBranchBypassRefspec(arg: string): boolean {
+  // Push options can contain arbitrary values, so only positional refspec-like
+  // args participate in this check. The force/no-verify rules handle flags.
+  if (arg.startsWith('-')) return false;
+
+  const separatorIndex = arg.indexOf(':');
+  if (separatorIndex === -1) return false;
+
+  const source = arg.slice(0, separatorIndex);
+  const destination = arg.slice(separatorIndex + 1);
+  if (!isProtectedBranch(destination)) return false;
+
+  // A blank source deletes the remote branch. That is a protected-branch bypass,
+  // while HEAD:branch and branch:branch are canonical push shapes.
+  if (source === '') return true;
+  if (source === 'HEAD') return false;
+  if (source === destination) return false;
+
+  return true;
+}
+
 export const DANGEROUS_RULES: DangerousRule[] = [
   {
     // Stash stack lives in the shared common-dir (.git/stash), so stashes
@@ -148,16 +175,7 @@ export const DANGEROUS_RULES: DangerousRule[] = [
   // ── Agent-only rules ────────────────────────────────────────────
   {
     subcommand: 'push',
-    match: (args) => {
-      const protectedTargets = ['develop', 'main', 'master', 'production'];
-      for (const a of args) {
-        if (protectedTargets.includes(a)) return true;
-        for (const t of protectedTargets) {
-          if (a === `:${t}` || a.endsWith(`:${t}`)) return true;
-        }
-      }
-      return false;
-    },
+    match: (args) => args.some(isProtectedBranchBypassRefspec),
     reason: 'Ops-agent runs must not push directly to protected branches (develop / main / master / production). Open a PR instead.',
     agentOnly: true,
   },

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-21
+
+### Fixed
+
+- Split the agent-mode protected-branch push rule into canonical-allow / bypass-block behavior. Ops-agent runs may now use canonical push forms (`git push`, `git push origin develop`, `git push origin HEAD:develop`, `git push origin develop:develop`, and the same for `main`/`master`/`production`) while still blocking bypass refspecs like `git push origin agent-fix:develop` and protected branch deletes like `git push origin :develop`.
+
 ## [1.6.0] - 2026-05-17
 
 ### Added

@@ -152,18 +152,57 @@ describe('agent-only rules', () => {
   beforeEach(() => { for (const k of ENV_KEYS) { saved[k] = process.env[k]; delete process.env[k]; } });
   afterEach(() => { for (const k of ENV_KEYS) { const v = saved[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
   describe('push to protected branches', () => {
-    const cases = [['push','origin','develop'],['push','origin','HEAD:develop'],['push','origin','agent-fix:develop'],['push','origin',':develop'],['push','origin','main'],['push','origin','HEAD:main'],['push','origin','master'],['push','origin','HEAD:production']];
-    for (const args of cases) {
-      test(`BLOCKS in agent mode: ${args.join(' ')}`, () => {
+    const protectedBranches = ['develop', 'main', 'master', 'production'];
+
+    test('ALLOWS in agent mode: git push with no explicit refspec', () => {
+      process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+      expect(checkCommand(['push']).blocked).toBe(false);
+    });
+
+    for (const branch of protectedBranches) {
+      const canonicalPushes = [
+        ['push', 'origin', branch],
+        ['push', 'origin', `HEAD:${branch}`],
+        ['push', 'origin', `${branch}:${branch}`],
+      ];
+      for (const args of canonicalPushes) {
+        test(`ALLOWS canonical push in agent mode: ${args.join(' ')}`, () => {
+          process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+          expect(checkCommand(args).blocked).toBe(false);
+        });
+      }
+
+      const bypassPushes = [
+        ['push', 'origin', `agent-fix-xyz:${branch}`],
+        ['push', 'origin', `:${branch}`],
+      ];
+      for (const args of bypassPushes) {
+        test(`BLOCKS bypass push in agent mode: ${args.join(' ')}`, () => {
+          process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+          const r = checkCommand(args);
+          expect(r.blocked).toBe(true);
+          expect(r.reason).toContain('protected branches');
+        });
+        test(`ALLOWS bypass-shaped push for humans: ${args.join(' ')}`, () => {
+          expect(checkCommand(args).blocked).toBe(false);
+        });
+      }
+
+      test(`BLOCKS force push to ${branch}`, () => {
         process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
-        const r = checkCommand(args);
+        const r = checkCommand(['push', 'origin', branch, '--force']);
         expect(r.blocked).toBe(true);
-        expect(r.reason).toContain('protected branches');
+        expect(r.reason).toContain('--force');
       });
-      test(`ALLOWS for humans: ${args.join(' ')}`, () => {
-        expect(checkCommand(args).blocked).toBe(false);
+
+      test(`BLOCKS no-verify push to ${branch}`, () => {
+        process.env['GIT_GUARDRAILS_AGENT_MODE'] = '1';
+        const r = checkCommand(['push', 'origin', branch, '--no-verify']);
+        expect(r.blocked).toBe(true);
+        expect(r.reason).toContain('--no-verify');
       });
     }
+
     test('ALLOWS in agent mode: feature-branch', () => { process.env['GIT_GUARDRAILS_AGENT_MODE']='1'; expect(checkCommand(['push','origin','feature-branch']).blocked).toBe(false); });
     test('ALLOWS in agent mode: HEAD:agent-fix-foo', () => { process.env['GIT_GUARDRAILS_AGENT_MODE']='1'; expect(checkCommand(['push','origin','HEAD:agent-fix-foo']).blocked).toBe(false); });
     test("doesn't false-match developement / feature/develop-stuff", () => {
@@ -173,7 +212,7 @@ describe('agent-only rules', () => {
     });
     test('agent mode triggers via GIT_AUTHOR_EMAIL', () => {
       process.env['GIT_AUTHOR_EMAIL'] = 'ops-agent@rubber.ci';
-      expect(checkCommand(['push','origin','develop']).blocked).toBe(true);
+      expect(checkCommand(['push','origin','agent-fix:develop']).blocked).toBe(true);
     });
   });
   describe('push --no-verify', () => {
