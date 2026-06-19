@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { _resetAtomicCommitCache, _setAtomicCommitInstalled } from '../src/atomic-commit.ts';
 import { checkCommand } from '../src/matcher.ts';
+import { _resetWorktreeCache, _setInLinkedWorktree } from '../src/worktree.ts';
 
 beforeAll(() => { _setAtomicCommitInstalled(false); });
 afterAll(() => { _resetAtomicCommitCache(); });
@@ -51,10 +52,8 @@ describe('checkCommand', () => {
     { args: ['pull'], desc: 'git pull' },
     { args: ['log', '--oneline'], desc: 'git log' },
     { args: ['diff'], desc: 'git diff' },
-    { args: ['branch', 'feature'], desc: 'git branch feature (create)' },
     { args: ['branch', '-d', 'feature'], desc: 'git branch -d (safe delete)' },
     { args: ['checkout', 'main'], desc: 'git checkout main (branch switch)' },
-    { args: ['checkout', '-b', 'feature'], desc: 'git checkout -b feature' },
     { args: ['reset', 'HEAD~1'], desc: 'git reset (soft, no --hard)' },
     { args: ['merge', 'feature'], desc: 'git merge feature' },
     { args: ['fetch'], desc: 'git fetch' },
@@ -223,5 +222,78 @@ describe('agent-only rules', () => {
       expect(r.reason).toContain('--no-verify');
     });
     test('ALLOWS for humans', () => { expect(checkCommand(['push','--no-verify','origin','feature']).blocked).toBe(false); });
+  });
+});
+
+describe('new-branch creation in main worktree (universal)', () => {
+  // checkCommand runs in the repo's main worktree during tests, so
+  // isInLinkedWorktree() is false and the universal block applies.
+  const blocked = [
+    ['branch', 'feature'],
+    ['branch', 'feature', 'origin/main'],
+    ['branch', '-f', 'feature', 'start'],
+    ['branch', '--track', 'feature', 'origin/main'],
+    ['checkout', '-b', 'feature'],
+    ['checkout', '-B', 'feature'],
+    ['checkout', '-b', 'feature', 'origin/main'],
+    ['checkout', '--orphan', 'feature'],
+    ['switch', '-c', 'feature'],
+    ['switch', '-C', 'feature'],
+    ['switch', '--create', 'feature'],
+    ['switch', '--orphan', 'feature'],
+    // Bundled short flags — git accepts these, so the matcher must too.
+    ['checkout', '-qb', 'feature'],
+    ['checkout', '-qB', 'feature'],
+    ['switch', '-qc', 'feature'],
+    ['switch', '-qC', 'feature'],
+  ];
+  for (const args of blocked) {
+    test(`BLOCKS: git ${args.join(' ')}`, () => {
+      const r = checkCommand(args);
+      expect(r.blocked).toBe(true);
+      expect(r.reason).toContain('worktree');
+    });
+  }
+
+  // Non-create branch ops and switching to existing branches stay allowed.
+  const allowed = [
+    ['branch'],
+    ['branch', '--list'],
+    ['branch', '-a'],
+    ['branch', '-v'],
+    ['branch', '-m', 'newname'],
+    ['branch', '--set-upstream-to=origin/main', 'feature'],
+    ['branch', '-d', 'feature'],
+    ['branch', '-dv', 'feature'],
+    ['branch', '--sort=-committerdate'],
+    ['checkout', 'main'],
+    ['switch', 'main'],
+    ['switch', '-'],
+  ];
+  for (const args of allowed) {
+    test(`ALLOWS: git ${args.join(' ')}`, () => {
+      expect(checkCommand(args).blocked).toBe(false);
+    });
+  }
+
+  test('bypassed inside a linked worktree', () => {
+    _setInLinkedWorktree(true);
+    try {
+      expect(checkCommand(['branch', 'feature']).blocked).toBe(false);
+      expect(checkCommand(['checkout', '-b', 'feature']).blocked).toBe(false);
+      expect(checkCommand(['switch', '-c', 'feature']).blocked).toBe(false);
+    } finally {
+      _resetWorktreeCache();
+    }
+  });
+
+  test('branch -D still blocked (separate force-delete rule)', () => {
+    expect(checkCommand(['branch', '-D', 'feature']).blocked).toBe(true);
+  });
+
+  test('bundled branch -Dv blocked as force-delete, not as "creation"', () => {
+    const r = checkCommand(['branch', '-Dv', 'feature']);
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain('force-deletes');
   });
 });

@@ -87,6 +87,7 @@ The wrapper is compiled with `bun build --compile` into a native Mach-O binary. 
 | `git clean -f` (any flag containing `-f`) | Permanently deletes untracked files | **Yes** (scope is local to the worktree) |
 | `git push --force` / `-f` / `--force-with-lease` | Can overwrite remote history | No (remote is shared) |
 | `git branch -D` | Force-deletes a branch without merge check | No (refs are shared) |
+| New-branch creation: `git branch <name>`, `git checkout -b`/`-B`/`--orphan`, `git switch -c`/`-C`/`--create`/`--orphan` | Creating a branch on the shared main worktree disrupts other agents/sessions using that checkout | **Yes** (create branches inside a linked worktree instead) |
 | `git restore` (all variants) | Discards working tree and/or index changes; path-specific restores bypassed a `.`-only rule | **Yes** (scope is local to the worktree) |
 | `git rebase` (all variants) | Rewrites commit history | No (history is shared) |
 | `git add` / `git commit` (conditional) | Blocked **only when [`git-atomic-commit`](https://github.com/josiahbryan/git-atomic-commit) is installed** — see [Pair with git-atomic-commit](#recommended-pair-with-git-atomic-commit) below | No |
@@ -98,8 +99,9 @@ Normal everyday git operations pass through transparently:
 - `git status`, `git log`, `git diff`
 - `git add`, `git commit`, `git push` (without `--force`)
 - `git pull`, `git fetch`, `git merge`
-- `git checkout <branch>`, `git checkout -b <branch>` (branch switching)
-- `git branch <name>`, `git branch -d <name>` (safe delete)
+- `git checkout <branch>`, `git switch <branch>` (switching to an existing branch)
+- `git branch` (list), `git branch -d <name>` (safe delete), `git branch -m` (rename)
+- Creating a branch **inside a linked worktree** (e.g. `git worktree add ../wt -b feature`)
 - `git reset HEAD~1` (soft reset, without `--hard`)
 - `git reset HEAD -- <file>` (unstage paths without using `git restore`)
 - `git tag`, `git remote`, `git config`
@@ -247,6 +249,7 @@ This exists because linked worktrees are commonly used as throwaway sandboxes fo
 | In a linked worktree | Behavior |
 |----------------------|----------|
 | `git reset --hard`, `git checkout .`, `git restore`, `git clean -f` | Allowed (worktree-local) |
+| New-branch creation (`git branch <name>`, `checkout -b`, `switch -c`, …) | Allowed (the whole point — do branch work in worktrees) |
 | `git stash`, `git push --force`, `git branch -D`, `git rebase` | Still blocked (shared repo / remote) |
 
 Detection uses `git rev-parse --git-dir --git-common-dir`: in the main worktree these are equal, in a linked worktree they differ. If you're not in a git repo at all, guardrails stay on.

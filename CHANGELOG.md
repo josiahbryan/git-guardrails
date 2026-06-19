@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-19
+
+### Added
+
+- **Block new-branch creation in the main worktree.** Three new rules stop agents (and people) from spawning branches on a shared main checkout, which disrupts other agents/sessions using that same working tree:
+  - `git branch <newname>` (create form)
+  - `git checkout -b` / `-B` / `--orphan`
+  - `git switch -c` / `-C` / `--create` / `--orphan`
+
+  The rules are **universal**, not agent-only: an audit of the running agent fleet showed agents are spawned without `GIT_GUARDRAILS_AGENT_MODE` and without an agent-pattern author email, so they are indistinguishable from a human to the wrapper — an `agentOnly` rule would never fire for them. All three are `allowedInLinkedWorktree`, so the intended workflow (`git worktree add ../wt -b feature`) is pushed into worktrees rather than forbidden. A human who genuinely needs a raw branch in the main tree uses `GIT_ALLOW_DANGEROUS=1`. The block message points at `git worktree add` and never mentions the bypass.
+- Bundle-aware short-flag detection (`shortFlagChars`): git accepts packed short flags (e.g. `git checkout -qb foo` creates branch `foo`), so the new matchers — and the existing `git branch -D` force-delete rule — now look *inside* a `-xyz` bundle instead of comparing the whole token. Non-create forms (`git branch` list / `-d` / `-m` / `-a` / `-v`, switching to an existing branch, `--set-upstream-to=...`) stay allowed.
+
+### Fixed
+
+- **Test isolation:** `tests/integration.test.ts` ran `git stash` / `git reset --hard` with `GIT_ALLOW_DANGEROUS=1` and `cwd` set to the project checkout, so a full `bun test` could wipe uncommitted changes in the working tree. The destructive bypass tests (and all other integration cases) now run inside a disposable temporary repo created in `beforeAll` and removed in `afterAll`.
+
 ## [1.6.1] - 2026-05-21
 
 ### Fixed

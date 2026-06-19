@@ -59,6 +59,81 @@ function isProtectedBranchBypassRefspec(arg: string): boolean {
   return true;
 }
 
+/**
+ * Short-flag characters packed into a single-dash bundle: '-qb' -> 'qb',
+ * '-D' -> 'D'. Empty for long flags (`--x`), the bare '-' (stdin / previous
+ * branch), and non-flag args. Git accepts bundled short flags (e.g.
+ * `checkout -qb foo` creates branch foo), so membership tests must look INSIDE
+ * the bundle rather than compare the whole token.
+ */
+function shortFlagChars(arg: string): string {
+  if (arg.length < 2 || arg[0] !== '-' || arg[1] === '-') return '';
+  return arg.slice(1).split('=')[0];
+}
+
+// Long `git branch` flags meaning the command is NOT creating a fresh branch
+// (delete / rename / copy / list / inspect / upstream modes).
+const BRANCH_NON_CREATE_LONG = new Set([
+  '--delete', '--move', '--copy', '--list', '--all', '--remotes',
+  '--show-current', '--edit-description', '--set-upstream-to', '--unset-upstream',
+  '--contains', '--no-contains', '--merged', '--no-merged', '--points-at',
+  '--sort', '--format', '--color', '--column', '--no-column', '--verbose',
+]);
+// Short `git branch` flags (bundleable) meaning NOT a create: delete, rename
+// (move), copy, list, all, remotes, set-upstream, verbose. Notably absent:
+// -t (--track) and -f (--force), which DO create a branch.
+const BRANCH_NON_CREATE_SHORT = 'dDmMcClaruv';
+
+/**
+ * True if `git branch <args>` is creating a new branch (vs list/delete/rename).
+ *
+ * Polarity note: `git branch` defaults to CREATE when given a name, so this uses
+ * a denylist of non-create flags (fail-closed: an unknown flag + a positional is
+ * treated as a create and blocked). checkoutCreatesBranch/switchCreatesBranch use
+ * the opposite allowlist because checkout/switch default to navigate, not create.
+ */
+function branchCreatesBranch(args: string[]): boolean {
+  for (const a of args) {
+    if (a.startsWith('--')) {
+      // Strip '=value' so `--set-upstream-to=origin/main feature` is recognized
+      // as a non-create (it retargets an existing branch's upstream).
+      const key = a.split('=')[0];
+      if (BRANCH_NON_CREATE_LONG.has(key)) return false;
+    } else {
+      for (const c of shortFlagChars(a)) {
+        if (BRANCH_NON_CREATE_SHORT.includes(c)) return false;
+      }
+    }
+  }
+  // A fresh branch creation needs a positional name (a non-flag arg). Pure
+  // list/inspect forms (`git branch`, `git branch -v`) have no positional, so
+  // they are allowed here even when their flags aren't all enumerated above.
+  return args.some((a) => !a.startsWith('-'));
+}
+
+/** True if `git checkout <args>` creates a branch (`-b`/`-B`, bundled, or --orphan). */
+function checkoutCreatesBranch(args: string[]): boolean {
+  return args.some((a) => {
+    if (a === '--orphan') return true;
+    const s = shortFlagChars(a);
+    return s.includes('b') || s.includes('B');
+  });
+}
+
+/** True if `git switch <args>` creates a branch (`-c`/`-C`, bundled, --create, --orphan). */
+function switchCreatesBranch(args: string[]): boolean {
+  return args.some((a) => {
+    if (a === '--create' || a === '--orphan') return true;
+    const s = shortFlagChars(a);
+    return s.includes('c') || s.includes('C');
+  });
+}
+
+const NEW_BRANCH_REASON =
+  'Creating a branch in the main worktree disrupts other agents sharing it. ' +
+  'Use a linked worktree instead: `git worktree add ../<name> -b <branch>`. ' +
+  '(Branch creation is allowed inside linked worktrees.)';
+
 export const DANGEROUS_RULES: DangerousRule[] = [
   {
     // Stash stack lives in the shared common-dir (.git/stash), so stashes
@@ -97,8 +172,10 @@ export const DANGEROUS_RULES: DangerousRule[] = [
   },
   {
     // Branches live in shared refs; deleting them is repo-wide, not local.
+    // Catch bundled short flags too (e.g. `-Dv`) so the create rule below
+    // doesn't claim the command with a misleading "creating a branch" message.
     subcommand: 'branch',
-    match: hasFlag('-D'),
+    match: (args) => args.some((a) => shortFlagChars(a).includes('D')),
     reason: 'git branch -D force-deletes a branch without merge check',
   },
   {
@@ -170,6 +247,34 @@ export const DANGEROUS_RULES: DangerousRule[] = [
       return args.some((a) => a === 'user.name' || a === 'user.email');
     },
     reason: 'Setting user.name/user.email via `git config` writes to the repo (or shared) config and pollutes other users committing in the same repo. Use GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL/GIT_COMMITTER_NAME/GIT_COMMITTER_EMAIL env vars instead. (--global and --system are allowed; --unset is always allowed.)',
+  },
+
+  // ── New-branch creation in the main worktree (universal) ────────
+  // Blocked for EVERYONE, not just agents: agents spawned via the grid look
+  // identical to a human in their env (no GIT_GUARDRAILS_AGENT_MODE, no
+  // agent-pattern author email — confirmed by audit), so an agentOnly rule
+  // would never fire for them. Bypassed inside linked worktrees — the point
+  // is to push branch work into worktrees, not forbid it. A human who really
+  // needs a raw branch in the main tree uses GIT_ALLOW_DANGEROUS=1.
+  {
+    subcommand: 'branch',
+    match: branchCreatesBranch,
+    reason: NEW_BRANCH_REASON,
+    allowedInLinkedWorktree: true,
+  },
+  {
+    // -B/--orphan (and -C below) also reset/orphan an EXISTING branch; we treat
+    // that as "creation" too — it still mutates the shared main worktree.
+    subcommand: 'checkout',
+    match: checkoutCreatesBranch,
+    reason: NEW_BRANCH_REASON,
+    allowedInLinkedWorktree: true,
+  },
+  {
+    subcommand: 'switch',
+    match: switchCreatesBranch,
+    reason: NEW_BRANCH_REASON,
+    allowedInLinkedWorktree: true,
   },
 
   // ── Agent-only rules ────────────────────────────────────────────
