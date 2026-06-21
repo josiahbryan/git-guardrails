@@ -90,15 +90,25 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   exit 1
 fi
 
-# Install (may need sudo on Linux)
+# Install atomically (may need sudo on Linux). Stage a temp file INSIDE the
+# install dir and rename it onto `git`, rather than moving the download (which
+# lives on a different filesystem) directly over it. On macOS, replacing a
+# Mach-O in place reuses the inode and the kernel keeps validating the new bytes
+# against the old binary's cached code-signature (cdhash), killing every exec
+# with "killed: 9". A same-directory rename gives a new inode and a clean
+# signature check — and it's atomic, so a half-written `git` never lands on PATH.
+INSTALLED_TMP="$INSTALL_DIR/.git-guardrails.install.$$"
 if [[ -w "$INSTALL_DIR" ]]; then
-  mv "$TMPFILE" "$INSTALL_DIR/git"
-  chmod 755 "$INSTALL_DIR/git"
+  cp "$TMPFILE" "$INSTALLED_TMP"
+  chmod 755 "$INSTALLED_TMP"
+  mv -f "$INSTALLED_TMP" "$INSTALL_DIR/git"
 else
   echo "Need sudo to write to $INSTALL_DIR..."
-  sudo mv "$TMPFILE" "$INSTALL_DIR/git"
-  sudo chmod 755 "$INSTALL_DIR/git"
+  sudo cp "$TMPFILE" "$INSTALLED_TMP"
+  sudo chmod 755 "$INSTALLED_TMP"
+  sudo mv -f "$INSTALLED_TMP" "$INSTALL_DIR/git"
 fi
+rm -f "$TMPFILE"
 
 echo "Done! git-guardrails installed."
 echo ""

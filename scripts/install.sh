@@ -10,10 +10,22 @@ if [[ ! -f "$DIST_BINARY" ]]; then
   exit 1
 fi
 
-# Copy compiled wrapper into /opt/homebrew/bin (shadows /usr/bin/git in PATH)
+# Install the wrapper into /opt/homebrew/bin (shadows /usr/bin/git in PATH).
+#
+# Atomic replace, NOT an in-place `cp`: overwriting a Mach-O at an existing path
+# reuses the same inode, and macOS keeps validating the new bytes against the
+# PREVIOUS binary's cached code-signature (cdhash). The mismatch makes AMFI kill
+# every exec with "killed: 9" (exit 137). Writing a fresh temp file in the same
+# directory and renaming it into place gives a NEW inode, so the new signature
+# is validated cleanly and the wrapper runs immediately. (mv within one dir is a
+# rename, so it's atomic and never leaves a partially-written git on PATH.)
 echo "Installing git-guardrails wrapper to $WRAPPER_DEST..."
-cp "$DIST_BINARY" "$WRAPPER_DEST"
-chmod 755 "$WRAPPER_DEST"
+TMP_DEST="$(dirname "$WRAPPER_DEST")/.git-guardrails.install.$$"
+trap 'rm -f "$TMP_DEST"' EXIT
+cp "$DIST_BINARY" "$TMP_DEST"
+chmod 755 "$TMP_DEST"
+mv -f "$TMP_DEST" "$WRAPPER_DEST"
+trap - EXIT
 
 echo ""
 echo "Done! git-guardrails installed."
