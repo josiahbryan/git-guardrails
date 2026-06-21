@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { checkCommand } from './matcher.ts';
 import { runPlugin, shouldRunPlugin } from './plugin.ts';
+import { formatGitCommand } from './shell-quote.ts';
 
 /** Path to the real git binary (untouched at its original location) */
 const REAL_GIT = '/usr/bin/git';
@@ -34,7 +35,7 @@ function main(): void {
     if (result.blocked) {
       process.stderr.write(
         `\x1b[31m[git-guardrails] BLOCKED:\x1b[0m ${result.reason}\n` +
-        `\x1b[31m[git-guardrails]\x1b[0m Command: git ${gitArgs.join(' ')}\n`
+        `\x1b[31m[git-guardrails]\x1b[0m Command: ${formatGitCommand(gitArgs)}\n`
       );
       process.exit(128);
     }

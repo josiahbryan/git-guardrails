@@ -34,4 +34,8 @@ export const requiresAtomicCommit = (_args: string[]): boolean =>
   isAtomicCommitInstalled() && process.env['GIT_ATOMIC_COMMIT'] !== '1';
 
 export const ATOMIC_COMMIT_REASON =
-  'git-atomic-commit is installed — use `git-atomic-commit commit -f <files> -m <msg>` for race-safe staging + commit';
+  'git-atomic-commit is installed — use `git-atomic-commit commit -f <files> -m <msg>` ' +
+  'for race-safe staging + commit (add `--no-verify` to skip hooks). ' +
+  'This is also the supported way to do a partial / explicit-pathspec commit ' +
+  '(the `git commit -- <pathspec>` form): it commits only <files> and preserves ' +
+  'any other staged changes, so a concurrent session\'s staging is left intact.';

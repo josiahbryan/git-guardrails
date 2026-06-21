@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-21
+
+### Fixed
+
+- **BLOCKED diagnostics now shell-quote the reconstructed command** (new `src/shell-quote.ts`). Previously the `Command:` line joined argv with bare spaces, so a multi-line `-m "<msg>"` value bled across lines and a trailing `-- <pathspec>` looked glued to the end of the message body — misleading operators (and agents) into thinking the pathspec had been mangled into the commit message. A multi-line message now renders as a single quoted token and the pathspec stands as its own token; the line is copy-paste-able back into a shell.
+- **Clarified the git-atomic-commit enforcement message.** It now states that partial / explicit-pathspec commits (the `git commit -- <pathspec>` form) are supported via `git-atomic-commit commit -f <files>` — which commits only those files and preserves any other staged changes — and that `--no-verify` is available. The block itself is intentional: `commit -f` is race-safe and index-isolated, unlike a raw partial commit routed through the shared index.
+
 ## [1.7.0] - 2026-06-19
 
 ### Added
