@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-06-21
+
+### Fixed
+
+- **Installers now replace the wrapper atomically**, fixing a macOS `killed: 9` (exit 137) that made the freshly-installed `git` unrunnable. Overwriting the Mach-O in place (`cp` over the dest, or a cross-filesystem `mv` from `$TMPDIR` in the remote installer) reuses the destination inode, so the kernel keeps validating the new bytes against the previous binary's cached code-signature (cdhash) and AMFI kills every exec until the cache evicts. Both `scripts/install.sh` and `scripts/install-remote.sh` now stage a temp file inside the install directory and rename it onto `git` — a new inode (clean signature check) installed atomically (no half-written `git` on PATH). The wrapper binary itself is unchanged from 1.7.1.
+
 ## [1.7.1] - 2026-06-21
 
 ### Fixed
