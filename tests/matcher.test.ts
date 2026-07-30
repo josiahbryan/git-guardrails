@@ -1,7 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { _resetAtomicCommitCache, _setAtomicCommitInstalled } from '../src/atomic-commit.ts';
 import { checkCommand } from '../src/matcher.ts';
-import { _resetWorktreeCache, _setInLinkedWorktree } from '../src/worktree.ts';
+import {
+  _resetWorktreeCache,
+  _setCurrentBranchForTest,
+  _setInLinkedWorktree,
+} from '../src/worktree.ts';
 
 beforeAll(() => { _setAtomicCommitInstalled(false); });
 afterAll(() => { _resetAtomicCommitCache(); });
@@ -295,5 +299,91 @@ describe('new-branch creation in main worktree (universal)', () => {
     const r = checkCommand(['branch', '-Dv', 'feature']);
     expect(r.blocked).toBe(true);
     expect(r.reason).toContain('force-deletes');
+  });
+});
+
+describe('worktree-scoped protected-branch push (universal)', () => {
+  afterEach(() => {
+    _resetWorktreeCache();
+    _setCurrentBranchForTest(null);
+  });
+
+  const WORKTREE_PUSH_REASON_SNIPPET = 'MAIN checkout';
+
+  test('BLOCKS: worktree + push to develop (explicit refspec)', () => {
+    _setInLinkedWorktree(true);
+    const r = checkCommand(['push', 'origin', 'develop']);
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain(WORKTREE_PUSH_REASON_SNIPPET);
+  });
+
+  test('BLOCKS: worktree + push to develop via HEAD:develop', () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'HEAD:develop']).blocked).toBe(true);
+  });
+
+  test('BLOCKS: worktree + push to develop via <branch>:develop', () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'agent-fix-xyz:develop']).blocked).toBe(true);
+  });
+
+  test('BLOCKS: worktree + push to main/master/production', () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'main']).blocked).toBe(true);
+    expect(checkCommand(['push', 'origin', 'master']).blocked).toBe(true);
+    expect(checkCommand(['push', 'origin', 'production']).blocked).toBe(true);
+  });
+
+  test('ALLOWS: MAIN checkout + push to develop is unaffected', () => {
+    _setInLinkedWorktree(false);
+    expect(checkCommand(['push', 'origin', 'develop']).blocked).toBe(false);
+  });
+
+  test('ALLOWS: worktree + push to a non-protected feature branch', () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'my-feature-branch']).blocked).toBe(false);
+  });
+
+  test('ALLOWS: worktree + push to non-protected branch via HEAD:<branch>', () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'HEAD:my-feature-branch']).blocked).toBe(false);
+  });
+
+  test('BLOCKS: worktree, current branch IS develop, no refspec given at all', () => {
+    _setInLinkedWorktree(true);
+    _setCurrentBranchForTest('develop');
+    expect(checkCommand(['push']).blocked).toBe(true);
+  });
+
+  test('BLOCKS: worktree, current branch IS develop, remote given but no refspec', () => {
+    _setInLinkedWorktree(true);
+    _setCurrentBranchForTest('develop');
+    expect(checkCommand(['push', 'origin']).blocked).toBe(true);
+  });
+
+  test('ALLOWS: worktree, current branch is a feature branch, no refspec given at all', () => {
+    _setInLinkedWorktree(true);
+    _setCurrentBranchForTest('my-feature-branch');
+    expect(checkCommand(['push']).blocked).toBe(false);
+  });
+
+  test('ALLOWS: main checkout, current branch IS develop, no refspec given at all', () => {
+    _setInLinkedWorktree(false);
+    _setCurrentBranchForTest('develop');
+    expect(checkCommand(['push']).blocked).toBe(false);
+  });
+
+  test("doesn't false-match developement / feature/develop-stuff", () => {
+    _setInLinkedWorktree(true);
+    expect(checkCommand(['push', 'origin', 'developement']).blocked).toBe(false);
+    expect(checkCommand(['push', 'origin', 'feature/develop-stuff']).blocked).toBe(false);
+  });
+
+  test('reason string matches the required wording', () => {
+    _setInLinkedWorktree(true);
+    const r = checkCommand(['push', 'origin', 'develop']);
+    expect(r.reason).toBe(
+      'Pushes to a protected branch (develop/main/...) must come from the MAIN checkout, never a linked worktree. Reconcile in the main checkout and push from there.'
+    );
   });
 });

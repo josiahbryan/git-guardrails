@@ -7,6 +7,7 @@ import { checkCommand } from '../src/matcher.ts';
 import {
   _setInLinkedWorktree,
   _resetWorktreeCache,
+  _setCurrentBranchForTest,
   isInLinkedWorktree,
 } from '../src/worktree.ts';
 
@@ -17,6 +18,7 @@ import {
 describe('linked-worktree bypass (unit)', () => {
   afterEach(() => {
     _resetWorktreeCache();
+    _setCurrentBranchForTest(null);
   });
 
   // Rules marked `allowedInLinkedWorktree: true` → should be allowed in a
@@ -68,6 +70,11 @@ describe('linked-worktree bypass (unit)', () => {
     _setInLinkedWorktree(true);
     expect(checkCommand(['status']).blocked).toBe(false);
     expect(checkCommand(['log']).blocked).toBe(false);
+    // `push` with no refspec resolves to the current branch (see the
+    // worktree-scoped protected-branch push rule in matcher.test.ts) — pin it
+    // to a non-protected name here since this test is about generic
+    // passthrough, not push-target protection.
+    _setCurrentBranchForTest('feature-branch');
     expect(checkCommand(['push']).blocked).toBe(false);
   });
 });

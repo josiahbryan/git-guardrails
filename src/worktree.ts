@@ -76,3 +76,34 @@ export function _setInLinkedWorktree(value: boolean): void {
 export function _resetWorktreeCache(): void {
   _inLinkedWorktree = null;
 }
+
+/** Test-only override for getCurrentBranch() (null = no override, probe real git). */
+let _currentBranchOverride: string | null = null;
+
+/**
+ * Returns the current branch name (`git rev-parse --abbrev-ref HEAD`), or an
+ * empty string if it can't be resolved (detached HEAD probe failure, not a
+ * repo, etc. are all conservatively treated as "unknown branch" — callers
+ * should not treat '' as matching any protected branch name).
+ *
+ * Used by the worktree-scoped protected-push rule to resolve the implicit
+ * target of `git push` / `git push <remote>` (no refspec), where the target
+ * branch is whatever HEAD currently points at.
+ */
+export function getCurrentBranch(): string {
+  if (_currentBranchOverride !== null) return _currentBranchOverride;
+  try {
+    const out = execFileSync(REAL_GIT, ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Force getCurrentBranch()'s return value (for testing). Pass null to clear. */
+export function _setCurrentBranchForTest(value: string | null): void {
+  _currentBranchOverride = value;
+}

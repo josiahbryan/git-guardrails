@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-07-30
+
+### Added
+
+- **Block pushes to a protected branch (develop/main/master/production) from a linked worktree — universal, not agent-gated.** The existing agent-only protected-branch push rule only fires when `isAgentRun()` is true (`GIT_GUARDRAILS_AGENT_MODE=1` or an `ops-agent@` git identity), which grid coding agents never set — so they could push a stale worktree straight onto `develop` completely unblocked, silently dropping other agents' committed-but-unpushed work. The new rule calls `isInLinkedWorktree()` directly inside its own `match()` (not the `allowedInLinkedWorktree` flag, which has the opposite polarity) so it fires for humans and agents alike, but only when actually inside a linked worktree — pushes from the main checkout are unaffected. Handles `git push`, `git push origin develop`, `git push origin HEAD:develop`, `git push origin <branch>:develop`, and the implicit-current-branch case (`git push` / `git push origin` with no refspec, including when the current branch itself is a protected one) via a new `getCurrentBranch()` helper in `src/worktree.ts`.
+
 ## [1.7.2] - 2026-06-21
 
 ### Fixed

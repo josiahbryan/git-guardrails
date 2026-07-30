@@ -1,4 +1,5 @@
 import { requiresAtomicCommit, ATOMIC_COMMIT_REASON } from './atomic-commit.ts';
+import { getCurrentBranch, isInLinkedWorktree } from './worktree.ts';
 
 export interface DangerousRule {
   /** Git subcommand to match (first positional arg) */
@@ -128,6 +129,69 @@ function switchCreatesBranch(args: string[]): boolean {
     return s.includes('c') || s.includes('C');
   });
 }
+
+function stripRefsHeadsPrefix(ref: string): string {
+  return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref;
+}
+
+/**
+ * Resolve the branch name(s) a `git push <restArgs>` invocation would
+ * actually push to. Handles:
+ *   - `git push` (no positional args at all) -> current branch (push.default)
+ *   - `git push origin` (remote only, no refspec) -> current branch
+ *   - `git push origin <branch>` -> <branch>
+ *   - `git push origin HEAD:<branch>` / `<src>:<branch>` -> <branch>
+ *     (regardless of <src> — the destination is what matters for protection)
+ *   - `git push origin :<branch>` (delete) -> skipped; nothing is being
+ *     pushed TO a branch, so it can't land commits there.
+ * Only positional (non-flag) args participate; flags like --force are
+ * handled by their own dedicated rules.
+ */
+function pushTargetBranches(args: string[]): string[] {
+  const positionals = args.filter((a) => !a.startsWith('-'));
+  // Convention: `git push <remote> <refspec...>`. Fewer than 2 positionals
+  // (no remote, or remote with no refspec) means git falls back to pushing
+  // the current branch.
+  const refspecs = positionals.length > 1 ? positionals.slice(1) : [];
+  if (refspecs.length === 0) {
+    const current = getCurrentBranch();
+    return current ? [current] : [];
+  }
+
+  const targets: string[] = [];
+  for (const refspec of refspecs) {
+    const colonIndex = refspec.indexOf(':');
+    let dest: string;
+    if (colonIndex === -1) {
+      dest = refspec;
+    } else {
+      dest = refspec.slice(colonIndex + 1);
+      if (dest === '') continue; // delete refspec — nothing pushed to a branch
+    }
+    targets.push(stripRefsHeadsPrefix(dest));
+  }
+  return targets;
+}
+
+/**
+ * Blocks pushes that target a protected branch (develop/main/master/
+ * production) FROM a linked worktree, regardless of who's driving (human or
+ * agent — no isAgentRun() gate). A worktree cut from a stale base can
+ * silently drop other agents' committed-but-unpushed work when it lands on a
+ * shared branch, so reconciliation must happen from the main checkout.
+ *
+ * Deliberately calls isInLinkedWorktree() itself (rather than relying on the
+ * `allowedInLinkedWorktree` flag, which does the OPPOSITE of what's wanted
+ * here) so this rule ONLY matches when actually inside a linked worktree —
+ * pushes from the main checkout are completely unaffected.
+ */
+function isProtectedPushFromLinkedWorktree(args: string[]): boolean {
+  if (!isInLinkedWorktree()) return false;
+  return pushTargetBranches(args).some(isProtectedBranch);
+}
+
+const WORKTREE_PROTECTED_PUSH_REASON =
+  'Pushes to a protected branch (develop/main/...) must come from the MAIN checkout, never a linked worktree. Reconcile in the main checkout and push from there.';
 
 const NEW_BRANCH_REASON =
   'Creating a branch in the main worktree disrupts other agents sharing it. ' +
@@ -275,6 +339,18 @@ export const DANGEROUS_RULES: DangerousRule[] = [
     match: switchCreatesBranch,
     reason: NEW_BRANCH_REASON,
     allowedInLinkedWorktree: true,
+  },
+
+  // ── Worktree-scoped protected-branch push (universal) ───────────
+  // Not agentOnly: humans and agents alike can push a stale-based worktree
+  // onto a shared branch and silently drop others' unpushed commits. Also
+  // deliberately NOT allowedInLinkedWorktree (that flag ALLOWS in a
+  // worktree — the opposite polarity from what this rule needs). Instead
+  // isProtectedPushFromLinkedWorktree() calls isInLinkedWorktree() itself.
+  {
+    subcommand: 'push',
+    match: isProtectedPushFromLinkedWorktree,
+    reason: WORKTREE_PROTECTED_PUSH_REASON,
   },
 
   // ── Agent-only rules ────────────────────────────────────────────
