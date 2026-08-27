@@ -37,5 +37,11 @@ export const ATOMIC_COMMIT_REASON =
   'git-atomic-commit is installed — use `git-atomic-commit commit -f <files> -m <msg>` ' +
   'for race-safe staging + commit (add `--no-verify` to skip hooks). ' +
   'This is also the supported way to do a partial / explicit-pathspec commit ' +
-  '(the `git commit -- <pathspec>` form): it commits only <files> and preserves ' +
-  'any other staged changes, so a concurrent session\'s staging is left intact.';
+  '(the `git commit -- <pathspec>` form), but ONLY at FILE (whole-file) granularity, ' +
+  'never at hunk granularity: it commits only <files> and preserves any OTHER staged ' +
+  'files intact, but for a file already NAMED on <files>, it stages the file\'s FULL ' +
+  'current on-disk content — so if that file also holds a different, unstaged, ' +
+  'uncommitted edit belonging to another author (e.g. a partial `git add -p` stage ' +
+  'sitting under further edits), that content is committed too, in full, under your ' +
+  'message. Before running it on a file you did not fully author yourself, confirm ' +
+  'nobody else has unstaged, uncommitted work in that same file.';
