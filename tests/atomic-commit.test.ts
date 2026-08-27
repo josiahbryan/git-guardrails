@@ -74,6 +74,27 @@ describe('atomic commit enforcement (unit)', () => {
     delete process.env['GIT_ATOMIC_COMMIT'];
     expect(checkCommand(['commit', '-m', 'msg']).blocked).toBe(false);
   });
+
+  // BDL-2882: the block message advertised git-atomic-commit as "the
+  // supported way to do a partial / explicit-pathspec commit" and claimed
+  // it "preserves any other staged changes" without saying at what
+  // granularity — true per-FILE, false per-HUNK. Following the message's
+  // own instructions on a file holding another author's uncommitted hunk
+  // committed that hunk in full under the caller's message. The message
+  // must name its granularity and warn about that specific consequence.
+  test('BLOCKS reason states FILE granularity, not just "partial"', () => {
+    _setAtomicCommitInstalled(true);
+    delete process.env['GIT_ATOMIC_COMMIT'];
+    const result = checkCommand(['commit', '-m', 'msg']);
+    expect(result.reason).toMatch(/file[- ]level|per[- ]file|whole[- ]file/i);
+  });
+
+  test('BLOCKS reason warns that another author\'s uncommitted content in the same file will be committed', () => {
+    _setAtomicCommitInstalled(true);
+    delete process.env['GIT_ATOMIC_COMMIT'];
+    const result = checkCommand(['add', 'file.txt']);
+    expect(result.reason).toMatch(/another author|someone else('s)?|a different author/i);
+  });
 });
 
 // ---------------------------------------------------------------------------
